@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
@@ -9,7 +10,8 @@ warnings.filterwarnings('ignore')
 
 train_csv = 'input/train.csv'
 test_csv = 'input/test.csv'
-submission_csv = 'input/gender_submission.csv'
+submission_temp = 'input/gender_submission.csv'
+submission_csv = '4-fold_lgbm.csv'
 
 
 def label_encorder (data, label_list: list):
@@ -39,19 +41,33 @@ def preprocess_train(train, test, obj_val: str, label_encord_target: list, drop_
 def main():
     train = pd.read_csv(train_csv)
     test = pd.read_csv(test_csv)
-    sample_submission = pd.read_csv(submission_csv)
-    # print(train.head())
-
+    sample_submission = pd.read_csv(submission_temp)
     obj_val = 'Survived'
+
+    # Create new features that check
+    data = pd.concat([train, test], sort=False)
+    data['FamilySize'] = data['Parch'] + data['SibSp'] + 1
+    train['FamilySize'] = data['FamilySize'][:len(train)]
+    test['FamilySize'] = data['FamilySize'][len(train):]
+
+    data['IsAlone'] = 0
+    data.loc[data['FamilySize'] == 1, 'IsAlone'] = 1
+    train['IsAlone'] = data['IsAlone'][:len(train)]
+    test['IsAlone'] = data['IsAlone'][len(train):]
+
     label_encord_target = ['Sex', 'Embarked']
     drop_cols = ['PassengerId', 'Name', 'Cabin', 'Ticket']
     train_x, train_y, test_x = preprocess_train(train, test, obj_val, label_encord_target, drop_cols)
-    # print(train_x.head())
+    print(train_x.head())
 
     score_list = []
     models = []
     fold = 4
-    kf = KFold(n_splits=fold, shuffle=True, random_state=71)
+    random_state = 71
+    kf = KFold(n_splits=fold, shuffle=True, random_state=random_state)
+
+    early_stopping_rounds = 20
+    verbose_eval = 10
 
     for fold_, (tr_idx, va_idx) in enumerate(kf.split(train_x, train_y)):
         # separate train-data to train/validation data.
@@ -65,15 +81,15 @@ def main():
         lgbm_params = {'objective': 'binary'}
         evals_result = {}
         # training
-        gbm = lgb.train(params = lgbm_params,
-                        train_set = lgb_train,
-                        valid_sets= [lgb_train, lgb_valid],
-                        early_stopping_rounds=20,
+        gbm = lgb.train(params=lgbm_params,
+                        train_set=lgb_train,
+                        valid_sets=[lgb_train, lgb_valid],
+                        early_stopping_rounds=early_stopping_rounds,
                         evals_result=evals_result,
-                        verbose_eval=10);
+                        verbose_eval=verbose_eval);
 
         oof = (gbm.predict(va_x) > 0.5).astype(int)  # covert score to 0 or 1
-        score_list.append(round(accuracy_score(va_y, oof)*100,2))
+        score_list.append(round(accuracy_score(va_y, oof)*100,2))  # cal accuracy and put list
         models.append(gbm)  # put trained-model
         print(f'fold{fold_ + 1} end\n' )
     print(score_list, "avg score ", round(np.mean(score_list), 2))
@@ -86,7 +102,7 @@ def main():
 
     pred = (np.mean(test_pred, axis=1) > 0.5).astype(int)
     sample_submission['Survived'] = pred
-    sample_submission.to_csv('4-fold_lgbm.csv',index=False)
+    sample_submission.to_csv(submission_csv, index=False)
 
 
 main()
