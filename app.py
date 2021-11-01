@@ -14,7 +14,18 @@ warnings.filterwarnings('ignore')
 train_csv = 'input/train.csv'
 test_csv = 'input/test.csv'
 submission_temp = 'input/gender_submission.csv'
-submission_csv = '4-fold_lgbm.csv'
+
+# kfold params
+fold = 4
+random_state = 71
+
+search_hyper_param = False
+lgbm_params = {
+    'objective': 'binary',  # default only 82.83
+    'max_bin': 300,
+    'learning_rate': 0.5,  # default 0.1
+    'num_leaves': 21,  # default 31
+}
 
 
 def label_encorder (data, label_list: list):
@@ -129,22 +140,14 @@ def main():
     train_x, train_y, test_x = preprocess_train(train, test, obj_val, label_encord_target, drop_cols)
     print(train_x.head())
 
-    fold = 4
-    random_state = 71
+    if search_hyper_param:
+        study_params = optuna.create_study(sampler=optuna.samplers.RandomSampler(seed=0))
+        f = partial(objective, train_x, train_y, fold, random_state)
+        study_params.optimize(f, n_trials=10)
+        print("Optuna found params: ", study_params.best_params)
+        lgbm_params['max_bin'] = study_params.best_params['max_bin']
+        lgbm_params['num_leaves'] = study_params.best_params['num_leaves']
 
-    # Serch HyperParams
-    study_params = optuna.create_study(sampler=optuna.samplers.RandomSampler(seed=0))
-    f = partial(objective, train_x, train_y, fold, random_state)
-    study_params.optimize(f, n_trials=10)
-    print("Optuna found params: ", study_params.best_params)
-
-    # lgbm params
-    lgbm_params = {
-        'objective': 'binary',  # default only 82.83
-        'max_bin': study_params.best_params['max_bin'],  # default 255
-        'learning_rate': 0.5,  # default 0.1
-        'num_leaves': study_params.best_params['num_leaves'],  # default 31
-    }
     kf = KFold(n_splits=fold, shuffle=True, random_state=random_state)
     models, score = fit(train_x, train_y, kf, lgbm_params)
 
@@ -155,6 +158,7 @@ def main():
 
     pred = (np.mean(test_pred, axis=1) > 0.5).astype(int)
     sample_submission['Survived'] = pred
+    submission_csv = f'{fold}-fold_lgbm.csv'
     sample_submission.to_csv(submission_csv, index=False)
 
 
