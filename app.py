@@ -2,7 +2,7 @@ import sys
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import log_loss
 from functools import partial
@@ -148,7 +148,8 @@ def main():
         lgbm_params['max_bin'] = study_params.best_params['max_bin']
         lgbm_params['num_leaves'] = study_params.best_params['num_leaves']
 
-    kf = KFold(n_splits=fold, shuffle=True, random_state=random_state)
+    # kf = KFold(n_splits=fold, shuffle=True, random_state=random_state)
+    kf = StratifiedKFold(n_splits=fold, shuffle=True, random_state=random_state)
     models, score = fit(train_x, train_y, kf, lgbm_params)
 
     # create submission
